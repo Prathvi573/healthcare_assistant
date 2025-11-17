@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_tts/flutter_tts.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:flutter_phone_direct_caller/flutter_phone_direct_caller.dart';
+import 'package:healthcare_assistant/screens/blind_user/medicines_list_screen_blind.dart';
 
 import '../auth/login_screen.dart';
 import '../settings/settings_screen.dart';
@@ -112,6 +113,16 @@ class _BlindUserHomeState extends State<BlindUserHome> {
               label: "Add Medicine",
               onTap: () => _navigateWithSpeech("Opening add medicine", const BlindAddMedicineScreen()),
             ),
+            _buildOption(
+              icon: Icons.alarm,
+              label: "Reminders",
+              onTap: () {Navigator.push(
+              context,
+                MaterialPageRoute(builder: (_) => const MedicinesListScreenBlind()),
+                 );
+                },
+              ),
+
             _buildOption(
               icon: Icons.camera_alt,
               label: "Pill Recognition",

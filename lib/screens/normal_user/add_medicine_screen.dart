@@ -1,11 +1,12 @@
-// lib/screens/normal_user/add_medicine_screen.dart
+import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:intl/intl.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:healthcare_assistant/models/medicine.dart';
 import 'package:healthcare_assistant/core/services/alarm_service.dart';
-import 'package:healthcare_assistant/screens/normal_user/reminder_confirmation_screen.dart';
+// FIXED: Removed the direct import that caused the "instant pop-up"
+// import 'package:healthcare_assistant/screens/normal_user/reminder_confirmation_screen.dart';
 
 class AddMedicineScreen extends StatefulWidget {
   const AddMedicineScreen({super.key});
@@ -44,32 +45,44 @@ class _AddMedicineScreenState extends State<AddMedicineScreen> {
       selected: selected,
       onSelected: (v) {
         setState(() {
-          if (v) {
-            _weekdays.add(day);
-          } else {
-            _weekdays.remove(day);
-          }
+          if (v) _weekdays.add(day);
+          else _weekdays.remove(day);
         });
       },
     );
   }
 
-  int _makeNotificationBaseId(String docId) => docId.hashCode & 0x7fffffff;
-
-  Future<String> _getLocalUserId() async {
+  // FIXED: Reads 'activeUserId'
+  Future<String> _getActiveUserId() async {
     final prefs = await SharedPreferences.getInstance();
-    var id = prefs.getString('localUserId');
+    final id = prefs.getString("activeUserId");
     if (id == null) {
-      id = 'local_${DateTime.now().millisecondsSinceEpoch}';
-      await prefs.setString('localUserId', id);
+      final generated = "normal_${DateTime.now().millisecondsSinceEpoch}";
+      await prefs.setString("activeUserId", generated);
+      return generated;
     }
     return id;
   }
 
+  int _makeNotificationBaseId(String docId) => docId.hashCode & 0x7fffffff;
+
   Future<void> _save() async {
     if (!_formKey.currentState!.validate()) return;
 
+    final userId = await _getActiveUserId();
+    
+    // 1. Create the docRef first to get an ID
+    final docRef = FirebaseFirestore.instance
+        .collection('users')
+        .doc(userId)
+        .collection('medicines')
+        .doc(); // Create document reference
+        
+    final medicineId = docRef.id; // Get the ID
+
+    // 2. FIXED: Pass the required 'id' to the Medicine constructor
     final med = Medicine(
+      id: medicineId, 
       name: _nameCtl.text.trim(),
       dosage: _dosageCtl.text.trim(),
       hour: _time.hour,
@@ -78,21 +91,25 @@ class _AddMedicineScreenState extends State<AddMedicineScreen> {
       frequency: _frequency,
       weekdays: _frequency == 'Weekly' ? _weekdays : null,
       notes: _notesCtl.text.trim(),
+      createdAt: Timestamp.now(),
+      notificationIds: [], // Initialize empty
     );
 
-    final userId = await _getLocalUserId();
-
-    final docRef = await FirebaseFirestore.instance
-        .collection('users')
-        .doc(userId)
-        .collection('medicines')
-        .add(med.toMap());
+    // 3. Now set the data on the docRef
+    await docRef.set(med.toMap());
 
     final baseId = _makeNotificationBaseId(docRef.id);
     final List<int> notifIds = [];
 
     if (med.reminder) {
-      final payload = docRef.id; // simple payload; adapt if you need JSON
+      final payload = jsonEncode({
+        "type": "reminder",
+        "medicineId": medicineId,
+        "medicineName": med.name,
+        "dosage": med.dosage,
+        "userMode": "normal"
+      });
+
       final title = 'Time to take ${med.name}';
       final body = '${med.dosage} — ${med.notes}';
 
@@ -106,11 +123,12 @@ class _AddMedicineScreenState extends State<AddMedicineScreen> {
           hour: med.hour,
           minute: med.minute,
           payload: payload,
+          medicineId: medicineId, // FIXED: Pass required medicineId
         );
       } else {
-       for (final wd in (med.weekdays ?? []).cast<int>()) {
-         final int id = baseId + wd;
-         notifIds.add(id);
+        for (final wd in (med.weekdays ?? []).cast<int>()) {
+          final int id = baseId + wd;
+          notifIds.add(id);
         }
 
         await AlarmService().scheduleWeeklyReminder(
@@ -121,6 +139,7 @@ class _AddMedicineScreenState extends State<AddMedicineScreen> {
           minute: med.minute,
           weekdays: med.weekdays ?? [],
           payload: payload,
+          medicineId: medicineId, // FIXED: Pass required medicineId
         );
       }
 
@@ -128,16 +147,9 @@ class _AddMedicineScreenState extends State<AddMedicineScreen> {
     }
 
     if (!mounted) return;
-    Navigator.pushReplacement(
-      context,
-      MaterialPageRoute(
-        builder: (_) => ReminderConfirmationScreen(
-          medicineName: med.name,
-          dosage: med.dosage,
-          medicineId: docRef.id,
-        ),
-      ),
-    );
+    // FIXED: This is the fix for the "instant pop-up".
+    // We just go back to the previous screen (the Home Screen).
+    Navigator.pop(context);
   }
 
   @override

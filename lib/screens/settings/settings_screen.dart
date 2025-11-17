@@ -3,6 +3,8 @@ import 'package:flutter_tts/flutter_tts.dart';
 import 'package:provider/provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../../providers/theme_provider.dart';
+// FIXED: We only need app_settings
+import 'package:app_settings/app_settings.dart';
 
 class SettingsScreen extends StatefulWidget {
   const SettingsScreen({super.key});
@@ -17,10 +19,24 @@ class _SettingsScreenState extends State<SettingsScreen> {
   final FlutterTts flutterTts = FlutterTts();
   final TextEditingController sosController = TextEditingController();
 
+  bool _isBlindMode = false; 
+
   @override
   void initState() {
     super.initState();
+    _checkUserMode();
     _loadSOSNumber();
+  }
+
+  Future<void> _checkUserMode() async {
+    final prefs = await SharedPreferences.getInstance();
+    final userType = prefs.getString('userType');
+    setState(() {
+      _isBlindMode = (userType == 'blind');
+    });
+    if (_isBlindMode) {
+      _speak("Settings screen.");
+    }
   }
 
   Future<void> _loadSOSNumber() async {
@@ -34,12 +50,15 @@ class _SettingsScreenState extends State<SettingsScreen> {
     final prefs = await SharedPreferences.getInstance();
     await prefs.setString('sosNumber', sosController.text.trim());
     _speak("SOS number saved");
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text("✅ SOS number saved successfully")),
-    );
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text("✅ SOS number saved successfully")),
+      );
+    }
   }
 
   Future<void> _speak(String text) async {
+    if (!_isBlindMode) return;
     await flutterTts.setLanguage("en-US");
     await flutterTts.setSpeechRate(0.5);
     await flutterTts.speak(text);
@@ -48,6 +67,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
   @override
   void dispose() {
     sosController.dispose();
+    flutterTts.stop();
     super.dispose();
   }
 
@@ -81,6 +101,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
             leading: const Icon(Icons.language, color: Colors.teal),
             title: const Text("Language"),
             subtitle: Text(selectedLanguage),
+            onTap: () => _speak("Select language. Current is $selectedLanguage"),
             trailing: DropdownButton<String>(
               value: selectedLanguage,
               items: const [
@@ -114,6 +135,42 @@ class _SettingsScreenState extends State<SettingsScreen> {
             },
             secondary: const Icon(Icons.notifications, color: Colors.teal),
           ),
+          
+          // --- START OF PERMISSION FIX ---
+          const Divider(),
+          const Padding(
+            padding: EdgeInsets.symmetric(vertical: 8.0),
+            child: Text(
+              "Fix Alarm & Battery",
+              style: TextStyle(
+                fontSize: 18,
+                fontWeight: FontWeight.bold,
+                color: Colors.teal,
+              ),
+            ),
+          ),
+          const Text(
+            "If alarms are not working, tap the button below and manually enable permissions.",
+            style: TextStyle(fontSize: 14, color: Colors.grey),
+          ),
+          const SizedBox(height: 10),
+
+          // FIXED: This button opens the "App Info" page, which is reliable.
+          ListTile(
+            leading: const Icon(Icons.settings, color: Colors.redAccent),
+            title: const Text("Open App Settings"),
+            subtitle: const Text("Tap to fix alarms and battery permissions"),
+            onTap: () async {
+              // Give clear instructions
+              _speak(
+                  "Opening App Info. First, tap Battery Usage, and enable Allow Background Activity and Auto Launch. Then, go back, tap Permissions, and enable Alarms and Reminders.");
+              
+              // This call is reliable and will open your app's settings page.
+              await AppSettings.openAppSettings(type: AppSettingsType.settings);
+            },
+          ),
+          // --- END OF PERMISSION FIX ---
+
           const Divider(),
 
           // ☎️ SOS Number Field
@@ -139,6 +196,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
               filled: true,
               fillColor: const Color(0xFFF6F2FA),
             ),
+            onTap: () => _speak("Enter emergency S.O.S. contact number"),
           ),
           const SizedBox(height: 10),
           ElevatedButton.icon(
@@ -157,10 +215,11 @@ class _SettingsScreenState extends State<SettingsScreen> {
           const Divider(),
 
           // ℹ️ About Section
-          const ListTile(
-            leading: Icon(Icons.info, color: Colors.teal),
-            title: Text("About App"),
-            subtitle: Text("Personal Healthcare Assistant v1.0"),
+          ListTile(
+            leading: const Icon(Icons.info, color: Colors.teal),
+            title: const Text("About App"),
+            subtitle: const Text("Personal Healthcare Assistant v1.0"),
+            onTap: () => _speak("About App. Personal Healthcare Assistant version 1.0"),
           ),
         ],
       ),

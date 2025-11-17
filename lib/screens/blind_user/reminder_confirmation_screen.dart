@@ -1,10 +1,11 @@
-// lib/screens/blind_user/reminder_confirmation_screen.dart
 import 'package:flutter/material.dart';
 import 'package:flutter_tts/flutter_tts.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:healthcare_assistant/core/services/alarm_service.dart';
 import 'package:healthcare_assistant/screens/blind_user/blind_home_screen.dart';
+import 'package:healthcare_assistant/core/services/firebase_service.dart'; // Import FirebaseService
+import 'dart:convert'; // Import dart:convert
 
 class ReminderConfirmationScreen extends StatefulWidget {
   final String medicineName;
@@ -39,26 +40,18 @@ class _ReminderConfirmationScreenState extends State<ReminderConfirmationScreen>
     await _tts.speak(t);
   }
 
-  Future<String> _getLocalUserId() async {
+  // FIXED: Use activeUserId
+  Future<String?> _getActiveUserId() async {
     final prefs = await SharedPreferences.getInstance();
-    var id = prefs.getString('localUserId');
-    if (id == null) {
-      id = 'local_${DateTime.now().millisecondsSinceEpoch}';
-      await prefs.setString('localUserId', id);
-    }
-    return id;
+    return prefs.getString('activeUserId');
   }
 
   Future<void> _markTaken() async {
     _speak("Marked as taken. Good job.");
-    if (widget.medicineId != null) {
-      final userId = await _getLocalUserId();
-      await FirebaseFirestore.instance
-          .collection('users')
-          .doc(userId)
-          .collection('medicines')
-          .doc(widget.medicineId)
-          .update({'lastTaken': FieldValue.serverTimestamp()});
+    final userId = await _getActiveUserId();
+    if (widget.medicineId != null && userId != null) {
+      // FIXED: Use FirebaseService to update
+      await FirebaseService.instance.setLastTaken(userId, widget.medicineId!);
     }
 
     if (!mounted) return;
@@ -71,12 +64,22 @@ class _ReminderConfirmationScreenState extends State<ReminderConfirmationScreen>
 
   Future<void> _snooze() async {
     final id = DateTime.now().millisecondsSinceEpoch.remainder(100000);
+    
+    // Re-create the payload for the snoozed alarm
+    final payload = jsonEncode({
+        "type": "reminder",
+        "medicineId": widget.medicineId,
+        "medicineName": widget.medicineName,
+        "dosage": widget.dosage,
+        "userMode": "blind" // This is the blind user screen
+      });
+
     await _alarm.snoozeMinutes(
       id: id,
       title: "Snoozed: Take ${widget.medicineName}",
       body: widget.dosage,
       minutes: 10,
-      payload: widget.medicineId,
+      payload: payload, // Pass the full payload
     );
     _speak("Snoozed for 10 minutes.");
     if (!mounted) return;

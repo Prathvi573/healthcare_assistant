@@ -1,13 +1,15 @@
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:flutter_phone_direct_caller/flutter_phone_direct_caller.dart';
-import '../auth/login_screen.dart';
-import '../settings/settings_screen.dart';
-import 'add_medicine_screen.dart';
-import 'health_input_screen.dart';
-import 'diet_recommendation_screen.dart';
-import 'pill_capture_screen.dart';
-import 'reminder_confirmation_screen.dart';
+import 'package:healthcare_assistant/screens/auth/login_screen.dart';
+import 'package:healthcare_assistant/screens/settings/settings_screen.dart';
+import 'package:healthcare_assistant/screens/normal_user/add_medicine_screen.dart';
+import 'package:healthcare_assistant/screens/normal_user/health_input_screen.dart';
+import 'package:healthcare_assistant/screens/normal_user/diet_recommendation_screen.dart';
+import 'package:healthcare_assistant/screens/normal_user/pill_capture_screen.dart';
+// FIXED: Import the correct list screen
+import 'package:healthcare_assistant/screens/reminder/medicines_list_screen.dart';
+
 
 class NormalUserHome extends StatelessWidget {
   const NormalUserHome({super.key});
@@ -17,28 +19,37 @@ class NormalUserHome extends StatelessWidget {
     final sosNumber = prefs.getString('sosNumber');
 
     if (sosNumber == null || sosNumber.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text("⚠️ No SOS number set in Settings")),
-      );
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text("⚠️ No SOS number set in Settings")),
+        );
+      }
       return;
     }
 
     try {
-      // Directly make the phone call
       await FlutterPhoneDirectCaller.callNumber(sosNumber);
     } catch (e) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text("❌ Failed to call $sosNumber")),
-      );
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text("❌ Failed to call $sosNumber")),
+        );
+      }
     }
   }
 
-  void _logout(BuildContext context) {
-    Navigator.pushAndRemoveUntil(
-      context,
-      MaterialPageRoute(builder: (_) => const LoginScreen()),
-      (route) => false,
-    );
+  void _logout(BuildContext context) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.remove('userType');
+    await prefs.remove('activeUserId'); // Clear the active user ID
+
+    if (context.mounted) {
+      Navigator.pushAndRemoveUntil(
+        context,
+        MaterialPageRoute(builder: (_) => const LoginScreen()),
+        (route) => false,
+      );
+    }
   }
 
   @override
@@ -68,11 +79,11 @@ class NormalUserHome extends StatelessWidget {
           ),
         ],
       ),
-      floatingActionButton: FloatingActionButton.extended(
+      // FIXED: Restored your original Floating Action Button
+      floatingActionButton: FloatingActionButton(
         onPressed: () => _triggerSOS(context),
-        backgroundColor: Colors.redAccent,
-        icon: const Icon(Icons.warning_amber_rounded, color: Colors.white),
-        label: const Text("SOS", style: TextStyle(color: Colors.white)),
+        backgroundColor: Colors.red,
+        child: const Icon(Icons.warning, color: Colors.white, size: 28),
       ),
       body: Padding(
         padding: const EdgeInsets.all(20.0),
@@ -116,6 +127,7 @@ class NormalUserHome extends StatelessWidget {
                 MaterialPageRoute(builder: (_) => const PillCaptureScreen()),
               ),
             ),
+            // FIXED: This button now goes to the correct list screen
             _buildOption(
               context,
               icon: Icons.alarm,
@@ -123,10 +135,7 @@ class NormalUserHome extends StatelessWidget {
               onTap: () => Navigator.push(
                 context,
                 MaterialPageRoute(
-                  builder: (_) => const ReminderConfirmationScreen(
-                    medicineName: "Example",
-                    dosage: "Example dosage",
-                  ),
+                  builder: (_) => const MedicinesListScreen(),
                 ),
               ),
             ),
@@ -136,6 +145,7 @@ class NormalUserHome extends StatelessWidget {
     );
   }
 
+  // FIXED: Restored your original pastel button styling
   Widget _buildOption(BuildContext context,
       {required IconData icon,
       required String label,

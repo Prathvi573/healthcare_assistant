@@ -39,6 +39,10 @@ android {
             signingConfig = signingConfigs.getByName("debug")
         }
     }
+
+    packaging {
+        resources.excludes += "META-INF/*"
+    }
 }
 
 flutter {
@@ -46,29 +50,35 @@ flutter {
 }
 
 dependencies {
+
+    // Firebase BOM (keeps versions aligned)
     implementation(platform("com.google.firebase:firebase-bom:32.7.1"))
     implementation("com.google.firebase:firebase-firestore")
     implementation("com.google.firebase:firebase-auth")
     implementation("com.google.firebase:firebase-analytics")
 
-    coreLibraryDesugaring("com.android.tools:desugar_jdk_libs:2.0.4")
-
+    // Needed for permission_handler + alarm scheduling
     implementation("androidx.core:core-ktx:1.15.0")
+
+    // Allows Java 11 APIs
+    coreLibraryDesugaring("com.android.tools:desugar_jdk_libs:2.0.4")
 }
 
-/// --- FIX: Make Flutter detect the APK correctly ---
+/* ----------------------------------------------------------------------
+   FIX: Make APK visible to Flutter for hot reload / debug
+------------------------------------------------------------------------ */
+
 tasks.register<Copy>("copyDebugApkToFlutter") {
 
-    // AGP 8 uses "packageDebug" instead of "assembleDebug"
     dependsOn("packageDebug")
 
-    val generatedApk = layout.buildDirectory.file("outputs/apk/debug/app-debug.apk")
+    val generatedApk =
+        layout.buildDirectory.file("outputs/apk/debug/app-debug.apk")
 
     from(generatedApk)
     into(layout.projectDirectory.dir("../../build/app/outputs/flutter-apk/"))
 }
 
-// After packaging APK, copy to flutter-apk
 tasks.matching { it.name == "packageDebug" }.configureEach {
     finalizedBy("copyDebugApkToFlutter")
 }

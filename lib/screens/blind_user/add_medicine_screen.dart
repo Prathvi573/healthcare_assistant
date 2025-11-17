@@ -1,4 +1,4 @@
-// lib/screens/blind_user/add_medicine_screen.dart
+import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:flutter_tts/flutter_tts.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
@@ -6,7 +6,8 @@ import 'package:intl/intl.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:healthcare_assistant/models/medicine.dart';
 import 'package:healthcare_assistant/core/services/alarm_service.dart';
-import 'package:healthcare_assistant/screens/blind_user/reminder_confirmation_screen.dart';
+// FIXED: Removed the direct import
+// import 'package:healthcare_assistant/screens/blind_user/reminder_confirmation_screen.dart';
 
 class BlindAddMedicineScreen extends StatefulWidget {
   const BlindAddMedicineScreen({super.key});
@@ -61,33 +62,44 @@ class _BlindAddMedicineScreenState extends State<BlindAddMedicineScreen> {
       selected: selected,
       onSelected: (v) {
         setState(() {
-          if (v) {
-            _weekdays.add(day);
-          } else {
-            _weekdays.remove(day);
-          }
+          if (v) _weekdays.add(day);
+          else _weekdays.remove(day);
           _speak(v ? '$label selected' : '$label deselected');
         });
       },
     );
   }
 
-  int _makeNotificationBaseId(String docId) => docId.hashCode & 0x7fffffff;
-
-  Future<String> _getLocalUserId() async {
+  Future<String> _getActiveUserId() async {
     final prefs = await SharedPreferences.getInstance();
-    var id = prefs.getString('localUserId');
+    final id = prefs.getString("activeUserId");
     if (id == null) {
-      id = 'local_${DateTime.now().millisecondsSinceEpoch}';
-      await prefs.setString('localUserId', id);
+      final generated = "blind_${DateTime.now().millisecondsSinceEpoch}";
+      await prefs.setString("activeUserId", generated);
+      return generated;
     }
     return id;
   }
 
+  int _makeBaseId(String docId) => docId.hashCode & 0x7fffffff;
+
   Future<void> _save() async {
     if (!_formKey.currentState!.validate()) return;
 
+    final userId = await _getActiveUserId();
+
+    // 1. Create the docRef first to get an ID
+    final docRef = FirebaseFirestore.instance
+        .collection('users')
+        .doc(userId)
+        .collection('medicines')
+        .doc(); // Create document reference
+        
+    final medicineId = docRef.id; // Get the ID
+
+    // 2. FIXED: Pass the required 'id' to the Medicine constructor
     final med = Medicine(
+      id: medicineId,
       name: _nameCtl.text.trim(),
       dosage: _dosageCtl.text.trim(),
       hour: _time.hour,
@@ -96,27 +108,32 @@ class _BlindAddMedicineScreenState extends State<BlindAddMedicineScreen> {
       frequency: _frequency,
       weekdays: _frequency == 'Weekly' ? _weekdays : null,
       notes: _notesCtl.text.trim(),
+      createdAt: Timestamp.now(),
+      notificationIds: [],
     );
 
-    final userId = await _getLocalUserId();
+    // 3. Now set the data on the docRef
+    await docRef.set(med.toMap());
 
-    final docRef = await FirebaseFirestore.instance
-        .collection('users')
-        .doc(userId)
-        .collection('medicines')
-        .add(med.toMap());
-
-    final baseId = _makeNotificationBaseId(docRef.id);
-    final List<int> notifIds = [];
+    final baseId = _makeBaseId(medicineId);
+    final List<int> collectedIds = [];
 
     if (med.reminder) {
-      final payload = docRef.id;
+      final payload = jsonEncode({
+        "type": "reminder",
+        "medicineId": medicineId,
+        "medicineName": med.name,
+        "dosage": med.dosage,
+        "userMode": "blind"
+      });
+
       final title = 'Time to take ${med.name}';
       final body = '${med.dosage} — ${med.notes}';
 
-      if (med.frequency == 'Daily') {
+      if (med.frequency == "Daily") {
         final id = baseId;
-        notifIds.add(id);
+        collectedIds.add(id);
+
         await AlarmService().scheduleDailyReminder(
           id: id,
           title: title,
@@ -124,11 +141,13 @@ class _BlindAddMedicineScreenState extends State<BlindAddMedicineScreen> {
           hour: med.hour,
           minute: med.minute,
           payload: payload,
+          medicineId: medicineId, // FIXED: Pass required medicineId
         );
       } else {
-       for (final wd in (med.weekdays ?? []).cast<int>()) {
-         final int id = baseId + wd;
-          notifIds.add(id);
+        // FIXED: Cast to int to solve num error
+        for (final wd in (med.weekdays ?? []).cast<int>()) {
+          final id = baseId + wd;
+          collectedIds.add(id);
         }
 
         await AlarmService().scheduleWeeklyReminder(
@@ -139,31 +158,26 @@ class _BlindAddMedicineScreenState extends State<BlindAddMedicineScreen> {
           minute: med.minute,
           weekdays: med.weekdays ?? [],
           payload: payload,
+          medicineId: medicineId, // FIXED: Pass required medicineId
         );
       }
 
-      await docRef.update({'notificationIds': notifIds});
-      await _speak("Reminder scheduled at ${_time.format(context)}");
+      await docRef.update({"notificationIds": collectedIds});
     }
+
+    _speak("Medicine saved and reminder scheduled.");
 
     if (!mounted) return;
 
-    Navigator.pushReplacement(
-      context,
-      MaterialPageRoute(
-        builder: (_) => ReminderConfirmationScreen(
-          medicineName: med.name,
-          dosage: med.dosage,
-          medicineId: docRef.id,
-        ),
-      ),
-    );
+    // FIXED: This is the fix for the "instant pop-up".
+    Navigator.pop(context);
   }
 
   @override
   Widget build(BuildContext context) {
     final timeLabel =
         DateFormat.jm().format(DateTime(0, 0, 0, _time.hour, _time.minute));
+
     return Scaffold(
       appBar: AppBar(title: const Text('Add Medicine (Blind)')),
       body: Padding(
@@ -175,8 +189,9 @@ class _BlindAddMedicineScreenState extends State<BlindAddMedicineScreen> {
               TextFormField(
                 controller: _nameCtl,
                 decoration: const InputDecoration(labelText: 'Medicine name'),
-                validator: (v) =>
-                    v == null || v.isEmpty ? 'Enter medicine name' : null,
+                validator: (v) => v == null || v.isEmpty
+                    ? 'Enter medicine name'
+                    : null,
                 onTap: () => _speak("Enter medicine name"),
               ),
               const SizedBox(height: 12),
@@ -189,8 +204,10 @@ class _BlindAddMedicineScreenState extends State<BlindAddMedicineScreen> {
               ListTile(
                 title: const Text('Time'),
                 subtitle: Text(timeLabel),
-                trailing:
-                    IconButton(icon: const Icon(Icons.access_time), onPressed: _pickTime),
+                trailing: IconButton(
+                  icon: const Icon(Icons.access_time),
+                  onPressed: _pickTime,
+                ),
                 onTap: _pickTime,
               ),
               SwitchListTile(
@@ -210,12 +227,11 @@ class _BlindAddMedicineScreenState extends State<BlindAddMedicineScreen> {
                 ],
                 onChanged: (v) {
                   setState(() => _frequency = v!);
-                  _speak('Frequency $v selected');
+                  _speak("Frequency $v selected");
                 },
                 decoration: const InputDecoration(labelText: 'Frequency'),
               ),
-              if (_frequency == 'Weekly') ...[
-                const SizedBox(height: 8),
+              if (_frequency == 'Weekly')
                 Wrap(
                   spacing: 8,
                   children: [
@@ -227,17 +243,19 @@ class _BlindAddMedicineScreenState extends State<BlindAddMedicineScreen> {
                     _weekdayChip(6, 'Sat'),
                     _weekdayChip(7, 'Sun'),
                   ],
-                )
-              ],
+                ),
               const SizedBox(height: 12),
               TextFormField(
                 controller: _notesCtl,
                 decoration: const InputDecoration(labelText: 'Notes'),
                 maxLines: 2,
-                onTap: () => _speak("Add any notes"),
+                onTap: () => _speak("Add notes"),
               ),
               const SizedBox(height: 20),
-              ElevatedButton(onPressed: _save, child: const Text('Save & Schedule')),
+              ElevatedButton(
+                onPressed: _save,
+                child: const Text('Save & Schedule'),
+              ),
             ],
           ),
         ),

@@ -1,65 +1,71 @@
-// lib/models/medicine.dart
 import 'package:cloud_firestore/cloud_firestore.dart';
 
 class Medicine {
-  String id;
-  String name;
-  String dosage;
-  int hour;
-  int minute;
-  bool reminder;
-  String frequency; // "Daily" or "Weekly"
-  List<int>? weekdays; // 1=Mon ... 7=Sun
-  String notes;
-  List<int>? notificationIds;
-  Timestamp? createdAt;
-  Timestamp? lastTaken;
+  final String id; // This is the Firestore document ID
+  final String name;
+  final String dosage;
+  final int hour;
+  final int minute;
+  final bool reminder;
+  final String frequency;
+  final List<int>? weekdays;
+  final String notes;
+  final Timestamp? createdAt;
+  final List<int>? notificationIds;
+  final int missedCount;
+  final Timestamp? lastTaken;
 
   Medicine({
-    this.id = '',
+    required this.id, // FIXED: 'id' is now required
     required this.name,
     required this.dosage,
     required this.hour,
     required this.minute,
     required this.reminder,
     required this.frequency,
-    this.weekdays,
-    this.notes = '',
+    this.weekdays, // Nullable for 'Daily'
+    this.notes = '', // Default value
     this.notificationIds,
     this.createdAt,
     this.lastTaken,
+    this.missedCount = 0, // Default value
   });
 
   Map<String, dynamic> toMap() {
     return {
+      // 'id' is not saved in the map, it's the document's ID
       'name': name,
       'dosage': dosage,
       'hour': hour,
       'minute': minute,
       'reminder': reminder,
       'frequency': frequency,
-      'weekdays': weekdays ?? [],
+      'weekdays': weekdays,
       'notes': notes,
-      'notificationIds': notificationIds ?? [],
-      'createdAt': FieldValue.serverTimestamp(),
+      'createdAt': createdAt ?? FieldValue.serverTimestamp(),
+      'notificationIds': notificationIds,
+      'missedCount': missedCount,
+      'lastTaken': lastTaken,
     };
   }
 
-  static Medicine fromDoc(DocumentSnapshot doc) {
-    final data = doc.data() as Map<String, dynamic>;
+  factory Medicine.fromDoc(DocumentSnapshot doc) {
+    final d = doc.data() as Map<String, dynamic>? ?? {}; // Safe access
     return Medicine(
-      id: doc.id,
-      name: data['name'] ?? '',
-      dosage: data['dosage'] ?? '',
-      hour: (data['hour'] ?? 0) as int,
-      minute: (data['minute'] ?? 0) as int,
-      reminder: data['reminder'] ?? false,
-      frequency: data['frequency'] ?? 'Daily',
-      weekdays: List<int>.from(data['weekdays'] ?? []),
-      notes: data['notes'] ?? '',
-      notificationIds: List<int>.from(data['notificationIds'] ?? []),
-      createdAt: data['createdAt'],
-      lastTaken: data['lastTaken'],
+      id: doc.id, // Get the ID from the document itself
+      name: d['name'] ?? '',
+      dosage: d['dosage'] ?? '',
+      hour: (d['hour'] ?? 0) as int,
+      minute: (d['minute'] ?? 0) as int,
+      reminder: d['reminder'] ?? false,
+      frequency: d['frequency'] ?? 'Daily',
+      weekdays: d['weekdays'] != null ? List<int>.from(d['weekdays']) : null,
+      notes: d['notes'] ?? '',
+      createdAt: d['createdAt'],
+      notificationIds:
+          d['notificationIds'] != null ? List<int>.from(d['notificationIds']) : null,
+      missedCount: (d['missedCount'] ?? 0) as int,
+      lastTaken: d['lastTaken'],
     );
   }
 }

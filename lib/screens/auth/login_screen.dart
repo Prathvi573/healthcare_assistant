@@ -1,8 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'signup_screen.dart';
-import '../normal_user/home_screen.dart';
-import '../blind_user/blind_home_screen.dart';
+import 'package:healthcare_assistant/screens/normal_user/home_screen.dart';
+import 'package:healthcare_assistant/screens/blind_user/blind_home_screen.dart';
+import 'package:flutter_tts/flutter_tts.dart'; // Import TTS
 
 class LoginScreen extends StatefulWidget {
   const LoginScreen({super.key});
@@ -16,14 +17,35 @@ class _LoginScreenState extends State<LoginScreen> {
   final _normalPasswordController = TextEditingController();
   final _blindUserController = TextEditingController();
   final _blindPasswordController = TextEditingController();
+  
+  final FlutterTts _tts = FlutterTts(); // TTS Added
+
+  @override
+  void initState() {
+    super.initState();
+    _speakIntro(); // Speak when screen opens
+  }
+
+  Future<void> _speakIntro() async {
+    await _tts.setLanguage("en-US");
+    await _tts.setSpeechRate(0.5);
+    await _tts.speak("Are you a normal user or a blind user?");
+  }
 
   Future<void> _login(String type) async {
     final prefs = await SharedPreferences.getInstance();
 
+    // --- THIS IS THE FIX ---
+    // We now save a single 'activeUserId' that is different for each user.
+    // All other screens will ONLY read 'activeUserId'.
+
     if (type == "normal") {
       if (_normalUserController.text.trim() == "normaluser" &&
           _normalPasswordController.text.trim() == "1234") {
+        
         await prefs.setString('userType', 'normal');
+        await prefs.setString('activeUserId', 'local_normal_user_id'); // Fixed ID for normal user
+
         if (!mounted) return;
         Navigator.pushReplacement(
           context,
@@ -35,7 +57,10 @@ class _LoginScreenState extends State<LoginScreen> {
     } else {
       if (_blindUserController.text.trim() == "blinduser" &&
           _blindPasswordController.text.trim() == "5678") {
+        
         await prefs.setString('userType', 'blind');
+        await prefs.setString('activeUserId', 'local_blind_user_id'); // Fixed ID for blind user
+
         if (!mounted) return;
         Navigator.pushReplacement(
           context,
@@ -74,8 +99,6 @@ class _LoginScreenState extends State<LoginScreen> {
                 ),
               ),
               const SizedBox(height: 30),
-
-              /// Cards layout (Row for wide screens, Column for phones)
               Flex(
                 direction: isWide ? Axis.horizontal : Axis.vertical,
                 mainAxisAlignment: MainAxisAlignment.center,
@@ -98,8 +121,6 @@ class _LoginScreenState extends State<LoginScreen> {
                 ],
               ),
               const SizedBox(height: 30),
-
-              /// Sign Up text
               TextButton(
                 onPressed: () => Navigator.push(
                   context,

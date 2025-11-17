@@ -50,3 +50,5 @@ linux/flutter/ephemeral/
 
 # App icons & generated assets
 **/generated/
+
+lib/core/api_key.dart
